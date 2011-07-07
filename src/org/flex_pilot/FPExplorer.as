@@ -15,16 +15,17 @@ Copyright 2009, Matthew Eernisse (mde@fleegix.org) and Slide, Inc.
 */
 
 package org.flex_pilot {
-  import org.flex_pilot.FlexPilot;
+  import flash.display.Sprite;
+  import flash.display.Stage;
+  import flash.events.MouseEvent;
+  import flash.external.ExternalInterface;
+  import flash.geom.Point;
+  import flash.geom.Rectangle;
+  
   import org.flex_pilot.FPLocator;
   import org.flex_pilot.FPLogger;
   import org.flex_pilot.FPRecorder;
-  import flash.display.Stage;
-  import flash.display.Sprite;
-  import flash.events.MouseEvent;
-  import flash.geom.Point;
-  import flash.geom.Rectangle;
-  import flash.external.ExternalInterface;
+  import org.flex_pilot.FlexPilot;
 
   public class FPExplorer {
     // Sprite which gets superimposed on the moused-over element
@@ -88,8 +89,14 @@ package org.flex_pilot {
     public static function select(e:MouseEvent):void {
       var targ:* = e.target;
       if ('name' in targ && targ.name == 'flex_pilotBorderSprite') {
-        return;
+          //trace("return on name = 'flex_pilotBorderSprite");
+		  return;
       }
+	  //This is to minimize the number of automation borders that are shown in the app.
+	  if ('showInAutomationHierarchy' in targ && targ["showInAutomationHierarchy"] == false) {
+		  //trace("return on 'showInAutomationHierarchy");
+		  return;
+	  }
       // Bordered sprite for highlighting
       var spr:Sprite = borderSprite;
       // Get the global coords of the moused-over elem
@@ -118,7 +125,8 @@ package org.flex_pilot {
         }
       }
       else {
-        throw new Error('Could not find any usable attributes for locator.');
+        //throw new Error('Could not find any usable attributes for locator.');
+		//trace("Couldn't find any usuable attributes for locator");
       }
     }
 

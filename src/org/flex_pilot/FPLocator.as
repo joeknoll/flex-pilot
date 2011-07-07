@@ -15,12 +15,18 @@ Copyright 2009, Matthew Eernisse (mde@fleegix.org) and Slide, Inc.
 */
 
 package org.flex_pilot {
-  import org.flex_pilot.FlexPilot;
-  import org.flex_pilot.FPLogger;
+  import com.adobe.net.URI;
+  
   import flash.display.DisplayObject;
   import flash.display.DisplayObjectContainer;
-  import mx.core.IRawChildrenContainer;
   import flash.utils.*;
+  
+  import mx.core.IRawChildrenContainer;
+  
+  import org.flex_pilot.FPLogger;
+  import org.flex_pilot.FlexPilot;
+  import mx.managers.SystemManager;
+  import mx.core.IChildList;
 
   public class FPLocator {
     // Stupid AS3 doesn't iterate over Object keys
@@ -63,7 +69,7 @@ package org.flex_pilot {
         params:Object):Boolean {
 
         var res:DisplayObject;
-        res = FPLocator.lookupDisplayObject(params, false);
+        res = FPLocator.lookupDisplayObject(params);
         if (res){
           return true;
         }
@@ -71,15 +77,11 @@ package org.flex_pilot {
     }
 
     public static function lookupDisplayObject(
-        params:Object, throwIfNotFound:Boolean = true):DisplayObject {
+        params:Object):DisplayObject {
         var res:DisplayObject;
         res = lookupDisplayObjectForContext(params, FlexPilot.getContext());
         if (!res && FlexPilot.contextIsApplication()) {
           res = lookupDisplayObjectForContext(params, FlexPilot.getStage());
-        }
-        if (!res && throwIfNotFound) {
-          const chain:String = normalizeFPLocator(params);
-          throw new Error("The chain '" + chain +"' was not found.");
         }
         return res;
     }
@@ -94,7 +96,7 @@ package org.flex_pilot {
           item:*, pos:int):DisplayObject {
         var map:Object = FPLocator.locatorMapObj;
         var loc:Object = locators[pos];
-        // If nothing specific exists for that attr, use the basic one
+		// If nothing specific exists for that attr, use the basic one
         var finder:Function = map[loc.attr] || FPLocator.findBySimpleAttr;
         var next:int = pos + 1;
         if (!!finder(item, loc.attr, loc.val)) {
@@ -106,19 +108,22 @@ package org.flex_pilot {
           // Otherwise recursively check the next link in
           // the locator chain
           var count:int = 0;
+		  var isRawChildContainer:Boolean = false;
+		  //trace("-2-\\\\\\\\\checkFPLocatorChain\\\\\\\\\\\\\\\\\\\\\ -- item: " + item);
           if (item is DisplayObjectContainer) {
-            if (item is IRawChildrenContainer) {
+            count = item.numChildren;
+			//trace("\t\t -2- item is DisplayObjectContainer -- count: " + count);
+            if (count == 0 && item is IRawChildrenContainer) {
               count = item.rawChildren.numChildren;
-            }
-            else {
-              count = item.numChildren;
+			  isRawChildContainer = true;
+			  //trace("\t\t =2= item is IRawChildrenContainer -- count: " + count);
             }
           }
           if (count > 0) {
             var index:int = 0;
             while (index < count) {
               var kid:DisplayObject;
-              if (item is IRawChildrenContainer) {
+			  if (isRawChildContainer && item is IRawChildrenContainer) {
                 kid = item.rawChildren.getChildAt(index);
               }
               else {
@@ -126,7 +131,8 @@ package org.flex_pilot {
               }
               var res:DisplayObject = checkFPLocatorChain(kid, next);
               if (res) {
-                return res;
+                  //trace(":::::::: return res: " + res);
+				  return res;
               }
               index++;
             }
@@ -137,28 +143,42 @@ package org.flex_pilot {
 
       var str:String = normalizeFPLocator(params);
       locators = parseFPLocatorChainExpresson(str);
+	  
       queue.push(obj);
       while (queue.length) {
         // Otherwise grab the next item in the queue
         var item:* = queue.shift();
+		if (item is SystemManager) {
+			var popupList:IChildList = SystemManager(item).popUpChildren;
+			var numChildren:int = popupList.numChildren;
+			var child:Object;
+			for (var i:int=0; i<numChildren; i++) {
+				child = popupList.getChildAt(i);
+				queue.push(child);
+			}
+		}
         // Append any kids to the end of the queue
-        if (item is DisplayObjectContainer) {
+		//trace("-1-\\\\\\\\\checkFPLocatorChain\\\\\\\\\\\\\\\\\\\\\ -- item: " + item);
+		if (item is DisplayObjectContainer) {
           var count:int = 0;
-          if (item is IRawChildrenContainer) {
+          var isRawChildrenContainer:Boolean = false;
+		  count = item.numChildren;
+		  //trace("\t\t -1- item is DisplayObjectContainer -- count: " + count);
+		  if (count == 0 && item is IRawChildrenContainer) {
             count = item.rawChildren.numChildren;
-          }
-          else {
-            count = item.numChildren;
+			isRawChildrenContainer = true;
+			//trace("\t\t =1= item is IRawChildrenContainer -- count: " + count);
           }
           var index:int = 0;
           while (index < count) {
             var kid:DisplayObject
-            if (item is IRawChildrenContainer) {
+            if (isRawChildrenContainer && item is IRawChildrenContainer) {
               kid = item.rawChildren.getChildAt(index);
             }
             else {
               kid = item.getChildAt(index);
             }
+			//trace("\t\t\t~~~~~~~~ kid: " + kid + "~~~~~~~~~~~~~\n");
             queue.push(kid);
             index++;
           }
@@ -166,6 +186,7 @@ package org.flex_pilot {
         var res:DisplayObject = checkFPLocatorChain(item, 0);
         // If this is a full match, we're done
         if (res) {
+	      //trace("<<<<<<<<<<<<<<< - res: " + res);
           return res;
         }
       }
@@ -271,7 +292,7 @@ package org.flex_pilot {
     private static function findHTML(
         obj:*, attr:String, val:*):Boolean {
       var res:Boolean = false;
-      if ('htmlText' in obj) {
+      if ('htmlText' in obj && obj.htmlText) {
         var text:String = FPLocator.cleanHTML(obj.htmlText);
         return val == text;
       }
@@ -287,8 +308,9 @@ package org.flex_pilot {
       while (!!(res = pat.exec(htmlText))) {
         // Remove HTML tags and linebreaks; and trim
         linkPlain = FPLocator.cleanHTML(res[2]);
-        if (linkPlain == linkText) {
-          var evPat:RegExp = /href="event:(.*?)"/i;
+        linkText = URI.unescapeChars(linkText);
+		if (linkPlain == linkText) {
+          var evPat:RegExp = /href="(.*?)"/i;
           var arr:Array = evPat.exec(res[1]);
           if (!!(arr && arr[1])) {
             return arr[1];
@@ -308,7 +330,7 @@ package org.flex_pilot {
 
     // Generates a chained-locator expression for the clicked-on item
     public static function generateLocator(item:*, ...args):String {
-      var strictLocators:Boolean = FlexPilot.config.strictLocators;
+      var strictLocators:Boolean;
       if (args.length) {
         strictLocators = args[0];
       }
@@ -319,13 +341,16 @@ package org.flex_pilot {
       // Verifies the property exists, and that the child can
       // be found from the parent (in some cases there is a parent
       // which does not have the item in its list of children)
+	  //trace("item before: " + item);
       var weHaveAWinner:Function = function (item:*, attr:String):Boolean {
-        var winner:Boolean = false;
+        //trace("winner - item - " + item)
+		var winner:Boolean = false;
         // Get an attribute that actually has a value
         if (usableAttr(item, attr)) {
           //If its a raw child container
           if (par is IRawChildrenContainer) {
-            if (par.rawChildren.contains(item)){
+              //trace("par: " + par + "par.rawChildren: " + par.rawChildren);
+			  if (par.rawChildren.contains(item)){
               winner = true;
             }
           }
@@ -342,9 +367,10 @@ package org.flex_pilot {
               while (index < count) {
                 var kid:DisplayObject;
                 kid = par.getChildAt(index);
-
+				//trace("kid: " + kid);
                 if (kid == item) {
-                  winner = true;
+                  //trace("kid == item");
+				  winner = true;
                   break;
                 }
                 index++;
@@ -352,15 +378,18 @@ package org.flex_pilot {
             }
           }
         }
+		//trace("winner - " + winner);
         return winner;
       };
       var usableAttr:Function = function (item:*, attr:String):Boolean {
         // Item has to have an attribute of that name
         if (!(attr in item)) {
-          return false;
+            //trace("no usuable attr in item - return false")
+			return false;
         }
         // Attribute's value cannot be null
         if (!item[attr]) {
+          //trace("attr value is null - return false");
           return false;
         }
         // If strict locators are on, don't accept an auto-generated
@@ -368,8 +397,10 @@ package org.flex_pilot {
         // These are often unreliable as locators
         if (strictLocators &&
             attr == 'name' && /\d+$/.test(item[attr])) {
-          return false;
+            //trace("didn't meet strict requirments - return false");
+			return false;
         }
+		//trace('usableAttr returned true');
         return true;
       };
       var isValidLookup:Function = function (exprArr:Array):Boolean {
@@ -395,7 +426,9 @@ package org.flex_pilot {
                 FPLocator.cleanHTML(item[attr]) : item[attr];
             exprArr.unshift(attr + ':' + attrVal);
             // If this chain looks up an object correct, keeps going
-            if (isValidLookup(exprArr)) {
+            var validLookup:Boolean = isValidLookup(exprArr);
+			//trace("isValidLookup :" + validLookup + " exprArr: " + exprArr);
+			if (validLookup) {
               break;
             }
             // Otherwise throw out this attr/value pair and keep

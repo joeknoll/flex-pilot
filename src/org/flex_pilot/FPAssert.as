@@ -250,25 +250,9 @@ package org.flex_pilot {
         }
         attrName = validatorArr[0];
         expectedVal = validatorArr[1];
-        // Attribute may be chained, so loop through any and
-        // look up the attr we want to check the value on
-        var attrArr:Array = attrName.split('.');
-        var attrVal:Object;
-        var key:String;
-        while (attrArr.length) {
-          if (!attrVal) {
-            attrVal = obj;
-          }
-          key = attrArr.shift();
-          if (key in attrVal) {
-            attrName = key;
-            attrVal = attrVal[attrName];
-          }
-          else {
-            throw new Error('"' + key +
-                '" attribute does not exist on this object.');
-          }
-        }
+        
+		var attrVal:Object = doLookUpAttr(attrName,obj);
+		
       }
 
       // Do any preprocessing of the value to check
@@ -304,5 +288,36 @@ package org.flex_pilot {
         throw new Error(errMsg);
       }
     }
-  }
+  	public static function doLookUpAttr(attrName:String,obj:Object):Object {
+	  // Attribute may be chained, so loop through any and
+	  // look up the attr we want to check the value on
+	  var attrArr:Array = attrName.split('.');
+	  var attrVal:Object;
+	  var key:String;
+	  while (attrArr.length) {
+		  if (!attrVal) {
+			  attrVal = obj;
+		  }
+		  key = attrArr.shift();
+		  var arrayItemPat:RegExp = new RegExp("\\[.*\\]", "g");
+		  var arrayIndex:String = arrayItemPat.exec(key);
+		  if (arrayIndex != null) {
+			  key = key.replace(arrayIndex,"");
+			  arrayIndex = arrayIndex.replace("[","");
+			  arrayIndex = arrayIndex.replace("]","");
+			  attrArr.unshift(parseInt(arrayIndex));
+		  }
+		  //
+		  if (key in attrVal) {
+			  attrName = key;
+			  attrVal = attrVal[attrName];
+		  }
+		  else {
+			  throw new Error('"' + key +
+				  '" attribute does not exist on this object.');
+		  }
+	  }
+	  return attrVal;
+  	}
+  }	
 }

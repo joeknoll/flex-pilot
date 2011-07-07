@@ -15,10 +15,13 @@ Copyright 2009, Matthew Eernisse (mde@fleegix.org) and Slide, Inc.
 */
 
 package org.flex_pilot {
+  import com.adobe.serialization.json.JSON;
+  
   import flash.display.DisplayObject;
   import flash.display.DisplayObjectContainer;
   import flash.events.*;
   import flash.geom.Point;
+  import flash.system.ApplicationDomain;
   import flash.utils.*;
   
   import mx.controls.DateField;
@@ -45,7 +48,6 @@ package org.flex_pilot {
       Events.triggerMouseEvent(obj, MouseEvent.MOUSE_OUT);
       Events.triggerMouseEvent(obj, MouseEvent.ROLL_OUT);
     }
-
     public static function click(params:Object):void {
       var obj:* = FPLocator.lookupDisplayObject(params);
 
@@ -112,7 +114,7 @@ package org.flex_pilot {
         destCoords.y = destCoords.y + Number(params.offsety);
       }
 
-      params.coords = '(' + destCoords.x + ',' + destCoords.y + ')';
+      params.coords = '(' + destCoords.x + '|' + destCoords.y + ')';
       dragDropToCoords(params);
     }
 
@@ -191,10 +193,10 @@ package org.flex_pilot {
     // Ensure coords are in the right format and are numbers
     private static function parseCoords(coordsStr:String):Point {
       var coords:Array = coordsStr.replace(
-          /\(|\)| /g, '').split(',');
+          /\(|\)| /g, '').split('|');
       var point:Point;
       if (isNaN(coords[0]) || isNaN(coords[1])) {
-        throw new Error('Coordinates must be in format "(x, y)"');
+        throw new Error('Coordinates must be in format "(x|y)"');
       }
       else {
         coords[0] = parseInt(coords[0], 10);
@@ -285,10 +287,10 @@ package org.flex_pilot {
           charCode: currCode });
       }
     }
-    public static function focusOut(params:Object):void {
-        var obj:* = FPLocator.lookupDisplayObject(params);
-        Events.triggerFocusEvent(obj, FocusEvent.FOCUS_OUT);
-    }
+	public static function focusOut(params:Object):void {
+		var obj:* = FPLocator.lookupDisplayObject(params);
+		Events.triggerFocusEvent(obj, FocusEvent.FOCUS_OUT);
+	}
     public static function select(params:Object):void {
       // Look up the item to write to
       var obj:* = FPLocator.lookupDisplayObject(params);
@@ -335,7 +337,12 @@ package org.flex_pilot {
           // Do nothing
       }
     }
-    
+	public static function listSelect(params:Object):void {
+		var obj:* = FPLocator.lookupDisplayObject(params);
+		var owner:* = obj.owner;
+		owner.selectedIndex = obj.listData.rowIndex;
+		Events.triggerListEvent(owner, ListEvent.ITEM_CLICK, {itemRenderer: obj});
+	}
     public static function date(params:Object):void {
       // Look up the item to write to
       var obj:* = FPLocator.lookupDisplayObject(params);
@@ -377,7 +384,50 @@ package org.flex_pilot {
       }
       return String(attrVal);
     }
-
+	
+	public static function getObjectToJSON(params:Object):String {
+		var obj:* = FPLocator.lookupDisplayObject(params);
+		var compositeObj:Object;
+		if ( params["property"] ) {
+			var propObj:* = FPAssert.doLookUpAttr(params.property,obj);
+			var jsonObj:String = JSON.encode(propObj);
+			return jsonObj;
+		}
+		return null;
+	}
+	
+	public static function delegateCommand(params:Object):void {
+		var obj:* = FPLocator.lookupDisplayObject(params);
+		// Get the delegate class name from the object
+		var delegate:* = obj['automationDelegateClass'];
+		try {
+			delegate.init(obj,params);
+		}
+		catch(e:Error) {
+			throw new Error('automationDelegateClass is not defined');
+		}
+		//Find the command (method) that we want to call by looking it up 
+		//in the class and seeing if there is a match
+		if (params["command"]) {
+			var command:String = params["command"];
+			var descr:XML = flash.utils.describeType(delegate);
+			var meth:*;
+			var methods:Object = {};
+			for each (meth in descr..method) {
+				var methodName:String = meth.@name.toXMLString();
+				if (methodName == params["command"]) {
+					var funct:Function = delegate[methodName] as Function;
+					try {
+						funct.apply();	
+					}
+					catch(e:Error) {
+						throw new Error("command method on delegate was not properly defined");
+					}
+					break;
+				}
+			}
+		}
+	}
     public static function getObjectCoords(params:Object):String {
       // Look up the item which coords we want to get
       var obj:* = FPLocator.lookupDisplayObject(params);
@@ -386,6 +436,10 @@ package org.flex_pilot {
       var coords:String = '(' + String(destCoords.x) + ',' + String(destCoords.y) + ')';
       return coords;
     }
+	public static function getObjectSize(params:Object):String {
+		var obj:* = FPLocator.lookupDisplayObject(params);
+		return 'width:' + obj.width + ',height:' + obj.height;
+	}
 
     //Dumping the child structure of node and traversing
     //for child test building purposes
